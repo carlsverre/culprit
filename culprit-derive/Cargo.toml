@@ -1,5 +1,5 @@
 [package]
-name = "culprit"
+name = "culprit-derive"
 version = "0.1.0"
 edition = "2021"
 authors = ["Carl Sverre"]
@@ -10,4 +10,3 @@ keywords = ["error", "result", "try", "context", "derive"]
 readme = "README.md"
 
 [dependencies]
-culprit-derive = { path = "culprit-derive" }
