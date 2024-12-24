@@ -1,14 +1,15 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+use proc_macro::TokenStream;
+use syn::{parse_macro_input, DeriveInput};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod expand;
+mod fallback;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+#[proc_macro_derive(Culprit)]
+pub fn culprit_derive(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree
+    let input = parse_macro_input!(input as DeriveInput);
+    match expand::culprit_try_derive(&input) {
+        Ok(stream) => stream.into(),
+        Err(err) => fallback::expand(&input, err).into(),
     }
 }
