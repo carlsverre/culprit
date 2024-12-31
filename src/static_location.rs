@@ -8,20 +8,22 @@ pub struct StaticLocation(&'static Location<'static>);
 
 impl StaticLocation {
     #[inline]
-    #[must_use]
     #[track_caller]
     pub fn new() -> Self {
         Self(Location::caller())
     }
 
+    #[inline]
     pub fn file(&self) -> &'static str {
         self.0.file()
     }
 
+    #[inline]
     pub fn line(&self) -> u32 {
         self.0.line()
     }
 
+    #[inline]
     pub fn column(&self) -> u32 {
         self.0.column()
     }
@@ -29,7 +31,6 @@ impl StaticLocation {
 
 impl Default for StaticLocation {
     #[inline]
-    #[must_use]
     #[track_caller]
     fn default() -> Self {
         Self::new()
