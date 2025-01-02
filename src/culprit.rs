@@ -1,184 +1,132 @@
+use alloc::borrow::Cow;
+use alloc::string::ToString;
 use core::{
     error::Error,
-    fmt::{Debug, Display},
+    fmt::{Debug, Display, Formatter},
 };
 
-use crate::static_location::StaticLocation;
+use crate::{
+    context::{Context, ContextStack},
+    fingerprint::Fingerprint,
+};
 
-pub type Result<T, Ctx> = core::result::Result<T, Culprit<Ctx>>;
-
-pub struct Culprit<Ctx> {
-    location: StaticLocation,
-    context: Ctx,
+pub struct Culprit<F: Fingerprint> {
+    fingerprint: F,
+    stack: ContextStack,
 }
 
-impl<Ctx> Culprit<Ctx> {
+impl<F: Fingerprint> Culprit<F> {
     #[inline]
     #[track_caller]
-    pub fn new(context: Ctx) -> Self {
-        Self {
-            location: StaticLocation::new(),
-            context,
-        }
+    pub fn new(fingerprint: F) -> Self {
+        let stack = ContextStack::from_ctx(Context::new(fingerprint.to_string()));
+        Self { fingerprint, stack }
     }
-}
-
-impl<Ctx: CulpritContext> Culprit<Ctx> {
-    pub fn sources(&self) -> impl Iterator<Item = &dyn CulpritContext> {
-        let mut cursor = Some(&self.context as &dyn CulpritContext);
-        core::iter::from_fn(move || {
-            let next = cursor.and_then(CulpritContext::source);
-            core::mem::replace(&mut cursor, next)
-        })
-    }
-}
-
-impl<Ctx> Display for Culprit<Ctx>
-where
-    Ctx: CulpritContext,
-{
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "{}", self.context)?;
-        for source in self.sources() {
-            write!(f, "\nCaused by: {}", source)?;
-        }
-        Ok(())
-    }
-}
-
-impl<Ctx> Debug for Culprit<Ctx>
-where
-    Ctx: CulpritContext,
-{
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "{} at {}", self.context, self.location)?;
-        for source in self.sources() {
-            if let Some(loc) = source.location() {
-                write!(f, "\nCaused by: {:?} at {}", source, loc)?;
-            } else {
-                write!(f, "\nCaused by: {:?}", source)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-pub trait ResultExt {
-    type Ok;
-    type Err;
-
-    #[track_caller]
-    fn with_context<Ctx: CulpritContext>(
-        self,
-        builder: impl FnOnce(Self::Err) -> Ctx,
-    ) -> Result<Self::Ok, Ctx>;
-}
-
-impl<Ok, Err: Error> ResultExt for core::result::Result<Ok, Err> {
-    type Ok = Ok;
-    type Err = Err;
 
     #[inline]
     #[track_caller]
-    fn with_context<Ctx: CulpritContext>(
-        self,
-        builder: impl FnOnce(Err) -> Ctx,
-    ) -> Result<Ok, Ctx> {
-        self.map_err(|s| Culprit::new(builder(s)))
+    pub fn new_with_note<N: Into<Cow<'static, str>>>(fingerprint: F, note: N) -> Self {
+        let stack = ContextStack::from_ctx(Context::new(note));
+        Self { fingerprint, stack }
+    }
+
+    #[inline]
+    pub fn new_with_stack(fingerprint: F, stack: ContextStack) -> Self {
+        Self { fingerprint, stack }
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn from_err<E: Error + Into<F>>(err: E) -> Self {
+        let stack = ContextStack::from_err(&err);
+        let fingerprint = err.into();
+        Self { fingerprint, stack }
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn with_note<I: Into<Cow<'static, str>>>(mut self, note: I) -> Self {
+        self.stack.push(Context::new(note));
+        self
+    }
+
+    #[inline]
+    #[track_caller]
+    pub fn with_fingerprint<F2, B>(self, fingerprinter: B) -> Culprit<F2>
+    where
+        F2: Fingerprint,
+        B: FnOnce(F) -> F2,
+    {
+        Culprit {
+            fingerprint: fingerprinter(self.fingerprint),
+            stack: self.stack,
+        }
+    }
+
+    #[inline]
+    pub fn fingerprint(&self) -> &F {
+        &self.fingerprint
+    }
+
+    #[inline]
+    pub fn context(&self) -> &ContextStack {
+        &self.stack
+    }
+
+    #[inline]
+    pub fn into_err(self) -> CulpritErr<F> {
+        CulpritErr(self)
     }
 }
 
-impl<E: Error, C> From<E> for Culprit<C>
-where
-    C: CulpritContext + From<E>,
-{
+impl<E: Error, F: Fingerprint + From<E>> From<E> for Culprit<F> {
     #[inline]
     #[track_caller]
     fn from(source: E) -> Self {
-        Culprit::new(C::from(source))
+        Self::from_err(source)
     }
 }
 
-pub trait CulpritContext: Display + Debug {
-    fn source(&self) -> Option<&dyn CulpritContext> {
-        None
-    }
-    fn location(&self) -> Option<StaticLocation> {
-        None
+impl<F: Fingerprint> From<Culprit<F>> for (F, ContextStack) {
+    #[inline]
+    fn from(culprit: Culprit<F>) -> Self {
+        (culprit.fingerprint, culprit.stack)
     }
 }
 
-impl<Ctx: CulpritContext> CulpritContext for Culprit<Ctx> {
-    fn source(&self) -> Option<&dyn CulpritContext> {
-        self.context.source()
-    }
-
-    fn location(&self) -> Option<StaticLocation> {
-        Some(self.location)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use core::fmt::{Debug, Formatter};
-
-    use super::*;
-
-    #[derive(Debug)]
-    struct TrivialError;
-    impl Error for TrivialError {}
-    impl Display for TrivialError {
-        fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
-            write!(f, "TrivialError")
-        }
-    }
-
-    #[derive(Debug)]
-    struct TrivialContext {
-        source: TrivialError,
-    }
-    impl Display for TrivialContext {
-        fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
-            Debug::fmt(self, f)
-        }
-    }
-    impl CulpritContext for TrivialContext {}
-    impl From<TrivialError> for TrivialContext {
-        fn from(err: TrivialError) -> Self {
-            TrivialContext { source: err }
-        }
-    }
-
-    #[derive(Debug)]
-    struct TrivialContext2 {
-        source: Culprit<TrivialContext>,
-    }
-    impl Display for TrivialContext2 {
-        fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
-            Debug::fmt(self, f)
-        }
-    }
-    impl CulpritContext for TrivialContext2 {}
-    impl From<Culprit<TrivialContext>> for TrivialContext2 {
-        fn from(err: Culprit<TrivialContext>) -> Self {
-            TrivialContext2 { source: err }
-        }
-    }
-
-    fn wat() -> Result<(), TrivialContext> {
-        Err(TrivialError.into())
-    }
-
-    fn wat2() -> Result<(), TrivialContext2> {
-        wat()?;
+impl<F: Fingerprint> Debug for Culprit<F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}\n{}", self.fingerprint, self.stack)?;
         Ok(())
     }
+}
 
-    #[test]
-    fn test_culprit_sanity() {
-        let err = wat().unwrap_err();
-        println!("{:?}\n", err);
-        let err = wat2().unwrap_err();
-        println!("{:?}", err);
+impl<F: Fingerprint> Display for Culprit<F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}\n{}", self.fingerprint, self.stack)?;
+        Ok(())
     }
 }
+
+pub struct CulpritErr<F: Fingerprint>(Culprit<F>);
+
+impl<F: Fingerprint> CulpritErr<F> {
+    #[inline]
+    pub fn into_culprit(self) -> Culprit<F> {
+        self.0
+    }
+}
+
+impl<F: Fingerprint> Display for CulpritErr<F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl<F: Fingerprint> Debug for CulpritErr<F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Debug::fmt(&self.0, f)
+    }
+}
+
+impl<F: Fingerprint> Error for CulpritErr<F> {}

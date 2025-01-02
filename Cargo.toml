@@ -6,8 +6,12 @@ authors = ["Carl Sverre"]
 description = "A Rust error crate with the goal of identifying precisely where and in which context an error occurs."
 repository = "https://github.com/carlsverre/culprit"
 license = "MIT OR Apache-2.0"
-keywords = ["error", "result", "try", "context", "derive"]
+keywords = ["error", "result", "try", "context", "stack"]
 readme = "README.md"
 
 [dependencies]
-culprit-derive = { path = "culprit-derive" }
+smallvec = { version = "1.13", features = ["union"] }
+
+[dev-dependencies]
+serde = "1.0"
+serde_json = "1.0"

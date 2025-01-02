@@ -4,9 +4,9 @@ use core::{
 };
 
 #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct StaticLocation(&'static Location<'static>);
+pub struct SrcLocation(&'static Location<'static>);
 
-impl StaticLocation {
+impl SrcLocation {
     #[inline]
     #[track_caller]
     pub fn new() -> Self {
@@ -29,7 +29,14 @@ impl StaticLocation {
     }
 }
 
-impl Default for StaticLocation {
+impl From<SrcLocation> for &'static Location<'static> {
+    #[inline]
+    fn from(val: SrcLocation) -> Self {
+        val.0
+    }
+}
+
+impl Default for SrcLocation {
     #[inline]
     #[track_caller]
     fn default() -> Self {
@@ -37,7 +44,7 @@ impl Default for StaticLocation {
     }
 }
 
-impl Debug for StaticLocation {
+impl Debug for SrcLocation {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("StaticLocation")
@@ -48,7 +55,7 @@ impl Debug for StaticLocation {
     }
 }
 
-impl Display for StaticLocation {
+impl Display for SrcLocation {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         Display::fmt(&self.0, f)
