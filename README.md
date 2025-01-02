@@ -1,4 +1,13 @@
-# culprit
+<h1 align="center">Culprit</h1>
+<p align="center">
+  <a href="https://docs.rs/culprit">
+    <img alt="docs.rs" src="https://img.shields.io/docsrs/culprit">
+  </a>
+  <a href="https://crates.io/crates/culprit">
+    <img alt="crates.io" src="https://img.shields.io/crates/v/culprit.svg">
+  </a>
+</p>
+
 A Rust error crate with the goal of identifying precisely where and in which context an error occurs.
 
 **Goals:**
