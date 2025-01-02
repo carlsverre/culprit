@@ -6,6 +6,9 @@
   <a href="https://crates.io/crates/culprit">
     <img alt="crates.io" src="https://img.shields.io/crates/v/culprit.svg">
   </a>
+  <a href="https://github.com/carlsverre/culprit/actions">
+    <img alt="Build Status" src="https://github.com/carlsverre/culprit/actions/workflows/rust.yml/badge.svg">
+  </a>
 </p>
 
 A Rust error crate with the goal of identifying precisely where and in which context an error occurs.
