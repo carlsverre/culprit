@@ -8,7 +8,7 @@ A Rust error crate with the goal of identifying precisely where and in which con
 4. Aligning errors to error codes for external handling (i.e. outside of rust)
 
 > [!WARNING]  
-> Culprit is extremely-alpha and may dramatically change at any point. It's currently undergoing design and testing within some projects. Collaboration is welcome during this process.
+> Culprit is extremely-alpha and may dramatically change at any point. It's currently undergoing design and testing within some projects. Ideas and discussion is welcome during this process.
 
 ## Getting started
 
