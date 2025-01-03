@@ -6,7 +6,7 @@ authors = ["Carl Sverre"]
 description = "A Rust error crate with the goal of identifying precisely where and in which context an error occurs."
 repository = "https://github.com/carlsverre/culprit"
 license = "MIT OR Apache-2.0"
-keywords = ["error", "result", "try", "context", "stack"]
+keywords = ["error", "error-handling", "result"]
 readme = "README.md"
 
 [dependencies]
