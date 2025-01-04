@@ -92,46 +92,58 @@ Error: Calc(NotANumber)
 
 Culprit came around while I was exploring various error handling patterns and crates in Rust. I roughly categorize them in the following way:
 
-1. New Type: A new type per abstraction boundary (usually an enum) often wraps the source error from lower layers directly, providing additional context through the type's `Display/Debug impl`. Examples: vanilla error handling, [thiserror]
+1. New Type: A new type per abstraction boundary (often an enum) often wraps the source error from lower layers directly, providing additional context via the type's `Display/Debug impl` and associated fields. Example: [thiserror]
 
 2. Accumulator: A single type that consumes an error and then allows additional context to be attached to it as it flows up the stack. Example: [anyhow]
 
-3. Hybrid: A single type that is generic over a new type per abstraction boundary (usually and enum). Provides context via the new type and may support attaching additional context. Example: [culprit]
+3. Hybrid: An Accumulator type which is generic, allowing it to be specialized with a New Type (often an enum). Provides context via the New Type as well as dynamic attachments. Example: [culprit]
 
-Each of these patterns maps to a distinct way of structuring errors in a Rust program as well as how a **logical trace** may be captured.
+Each of these patterns are able to capture errors as well as the **logical trace** of an erroneous program state.
 
 <a id='logical-trace'></a>
 > [!TIP]  
-> I define **logical trace** as the path the error takes through a program. The path is made up of steps, which primarily correlate with an error passing between modules, crates, threads, or async tasks. The developer may add context to points on the path to further illuminate the error's path.
+> I define **logical trace** as the path the error takes through a program. The path is made up of steps, which primarily correlate with an error passing between modules, crates, threads, or async tasks. The developer may add context to points on the path to further illuminate the error's path. It's important to note that while they share similar properties, a logical trace is not the same as a backtrace. The former captures the error's flow through the codebase while the latter captures the state of the stack at a particular point in time.
 
-Here is a table comparing common Rust error crates to Culprit. Please file an issue if I made a mistake or am missing a commonly used crate.
+Here is a table comparing common Rust error crates to Culprit. _Please file an issue if I made a mistake or am missing a commonly used crate._
 
-| crate           | pattern     | uses unsafe | logical trace         | captured context                                               |
-| --------------- | ----------- | ----------- | --------------------- | -------------------------------------------------------------- |
-| [anyhow]        | Accumulator | yes         | context               | strings, Backtrace, custom types¹, source error¹               |
-| [error-stack]   | Hybrid      | yes         | context, [SpanTrace]³ | strings, Backtrace, [SpanTrace]³, custom types¹, source error¹ |
-| [eyre]          | Accumulator | yes         | context, [SpanTrace]³ | strings, Backtrace, [SpanTrace]³, custom types¹, source error¹ |
-| [thiserror]     | New Type    | no          | context               | Backtrace², custom types, source error                         |
-| [tracing_error] | Hybrid      | yes         | [SpanTrace]           | only [SpanTrace]                                               |
-| [culprit]       | Hybrid      | no          | context, enriched     | strings, custom types, source error                            |
+<a id='comparison-table'></a>
+| crate           | pattern     | uses unsafe | logical trace                   | captured context                                                |
+| --------------- | ----------- | ----------- | ------------------------------- | --------------------------------------------------------------- |
+| [anyhow]        | Accumulator | yes         | context                         | strings, Backtrace³, custom types¹, source error¹               |
+| [error-stack]   | Hybrid      | yes         | context, enriched, [SpanTrace]³ | strings, Backtrace³, [SpanTrace]³, custom types¹, source error¹ |
+| [eyre]          | Accumulator | yes         | context, [SpanTrace]³           | strings, Backtrace³, [SpanTrace]³, custom types¹, source error¹ |
+| [thiserror]     | New Type    | no          | context                         | Backtrace²⁺³, custom types, source error                        |
+| [tracing_error] | Hybrid      | yes         | [SpanTrace]                     | only [SpanTrace]                                                |
+| [culprit]       | Hybrid      | no          | context, enriched               | strings, custom types, source error                             |
 
 ¹ Runtime retrieval requires `TypeId` lookup <br />
-² Requires Rust nightly
+² Requires Rust nightly <br />
 ³ Optional feature
 
+The first thing you may notice is that most of the error handling crates use unsafe. They do this for varying reasons, but the most common use case I found is to support dynamic extraction of nested types at runtime. Examples: [anyhow:downcast_ref] and [error-stack:downcast_ref]. This is a perfectly fine decision, however I believe it comes with some important tradeoffs. The first is crate complexity. The machinery required to store and retrieve values by type involves a lot of very tricky unsafe usage and some clever typesystem shenanigans to keep the Rust compiler happy. The second tradeoff is that it obfuscates the set of possible erroneous states by hiding that information from the typesystem.
 
-The first thing you may notice is that most of the error handling crates use unsafe. They do this for varying reasons, but the most common use case I found is to support dynamic extraction of nested types at runtime. Examples: [anyhow:downcast_ref] and [error-stack:downcast_ref]. This is a perfectly fine decision, however I believe it comes with some important tradeoffs. The first is crate complexity. The machinery required to store and retrieve values by type involves a lot of very tricky unsafe usage and some clever types to keep the Rust compiler happy. The second tradeoff is that it obfuscates which errors can be raised by which functions by hiding that information from the compiler and thus upstream developers.
+> [!NOTE]  
+> When [error_generic_member_access] finally stabilizes, these crates may choose to eliminate some or all of their unsafe usage by switching to `Error::provide`. However it's not clear if or when this feature will land as the error working group seems to be somewhat abandoned as of January 2025.
 
-Note, when [error_generic_member_access] finally is stabilized, these crates may choose to eliminate some of their unsafe usage by switching to `Error::provide`. However it's not clear if or when this feature will land as the error working group seems to be somewhat abandoned as of January 2025.
-
-Returning to the table, the next interesting feature is how the crate captures the error's <a href="#logical-trace">logical-trace</a>. I've summarized this into three labels: **context**, **enriched**, and **[SpanTrace]**.
+Returning to the [table], the next interesting feature is how the crate captures the error's [logical-trace]. I've summarized this with three labels: **context**, **enriched**, and **[SpanTrace]**.
 
 * **context**: The logical-trace is captured as additional context is accumulated by the error type.
 * **enriched**: The logical-trace is automatically enriched with file names and line numbers as context is accumulated.
 * **[SpanTrace]**: The current [tracing]::Span is captured and can be used later to query or print out the tree of Spans that led to the instantiation of an error. See [tracing_error] for more details.
 
-> [!WARNING]  
-> This section is still under construction.
+Finally, the [table] outlines the various ways context can be captured:
+
+* **strings**: Strings may be attached as context as the error propagates.
+* **Backtrace**: A [Backtrace] is generated when the error is captured.
+* **custom types**: A user defined type is attached as context. In Accumulator style crates the type is erased and may only be retrieved through runtime reflection.
+* **source error**: An unenriched error is captured as the "source". For example an underlying `io::Error` is stored as context as the root cause.
+* **[SpanTrace]**: The current [tracing]::Span is stored as context when the error is captured.
+
+With these details in mind, we can finally discuss what makes Culprit unique. Per the table, Culprit is a Hybrid between the New Type and Accumulator model. It's generic over a `Context` type which is provided by the developer. Internally, Culprit builds a [logical-trace] of physical source code locations, context changes, and notes. The combination of a dynamic [logical-trace] with a custom `Context` type provides a best-of-both-worlds experience.
+
+When using Culprit, the highest level `Context` types should represent all the erroneous states a program can be in. These higher level types will wrap lower level `Context` types all the way down to the root cause of each error state. Because Culprit automatically captures human-readable details in the [logical-trace], the `Context` types are free to only capture what the program needs to handle error states. This allows `Context` types to be closer to a pure representation of the various error states a program can be in.
+
+One of Culprit's goals is to make it easier for the developer to map erroneous states to error codes. This is useful when writing developer facing binaries or APIs. Culprit suggests that by keeping the `Context` as simple as possible, error codes can be defined as a mapping between paths through the `Context` type and a set of error codes. I accept that you can also achieve this statically with [thiserror] or dynamically via reflection in the other error libraries. However, I believe Culprit is the first crate to make this an explicit design goal and I hope to develop methods to make managing this error code mapping easier.
 
 # Outstanding Work
 
@@ -148,6 +160,9 @@ Returning to the table, the next interesting feature is how the crate captures t
 - [ ] `bail!` or similar macro for easy error generation
 - [ ] document all methods and modules
 
+[table]: #comparison-table
+[logical-trace]: #logical-trace
+
 [anyhow]:https://docs.rs/anyhow/latest/anyhow/
 [error-stack]: https://docs.rs/error-stack/0.5.0/error_stack/
 [eyre]: https://docs.rs/eyre/latest/eyre/
@@ -159,3 +174,4 @@ Returning to the table, the next interesting feature is how the crate captures t
 [error-stack:downcast_ref]: https://docs.rs/error-stack/0.5.0/error_stack/struct.Report.html
 [error_generic_member_access]: https://github.com/rust-lang/rust/issues/99301
 [tracing]: https://docs.rs/tracing/latest/tracing/index.html
+[Backtrace]: https://doc.rust-lang.org/std/backtrace/index.html
