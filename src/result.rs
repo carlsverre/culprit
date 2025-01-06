@@ -2,50 +2,49 @@ use alloc::borrow::Cow;
 use alloc::string::ToString;
 use core::error::Error;
 
-use crate::{context::ContextStack, culprit::Culprit, fingerprint::Fingerprint};
+use crate::{context::Context, culprit::Culprit, trace::Trace};
 
 pub trait ResultExt {
     type Ok;
     type Residual;
 
     #[track_caller]
-    fn fingerprint_with<F, B>(self, fingerprinter: B) -> Result<Self::Ok, Culprit<F>>
+    fn or_ctx<I, C, F>(self, op: F) -> Result<Self::Ok, Culprit<C>>
     where
-        B: FnOnce(Self::Residual) -> F,
-        F: Fingerprint;
+        F: FnOnce(Self::Residual) -> I,
+        C: Context + From<I>;
 
     #[inline]
     #[track_caller]
-    fn fingerprint<F>(self) -> Result<Self::Ok, Culprit<F>>
+    fn or_into_ctx<C>(self) -> Result<Self::Ok, Culprit<C>>
     where
         Self: Sized,
-        F: Fingerprint + From<Self::Residual>,
+        C: Context + From<Self::Residual>,
     {
-        self.fingerprint_with(F::from)
+        self.or_ctx(C::from)
     }
 
     #[inline]
     #[track_caller]
-    fn note_with<F, N, B>(self, note: N, fingerprinter: B) -> Result<Self::Ok, Culprit<F>>
+    fn or_culprit<I, C, N, F>(self, note: N, op: F) -> Result<Self::Ok, Culprit<C>>
     where
         N: Into<Cow<'static, str>>,
-        B: FnOnce(Self::Residual) -> F,
-        F: Fingerprint,
+        F: FnOnce(Self::Residual) -> I,
+        C: Context + From<I>,
         Self: Sized,
     {
-        self.fingerprint_with(fingerprinter)
-            .map_err(|culprit| culprit.with_note(note))
+        self.or_ctx(op).map_err(|culprit| culprit.with_note(note))
     }
 
     #[inline]
     #[track_caller]
-    fn note<F, N>(self, note: N) -> Result<Self::Ok, Culprit<F>>
+    fn or_into_culprit<C, N>(self, note: N) -> Result<Self::Ok, Culprit<C>>
     where
         Self: Sized,
-        F: Fingerprint + From<Self::Residual>,
+        C: Context + From<Self::Residual>,
         N: Into<Cow<'static, str>>,
     {
-        self.note_with(note, F::from)
+        self.or_culprit(note, C::from)
     }
 }
 
@@ -54,63 +53,62 @@ impl<Ok, Err: Error> ResultExt for core::result::Result<Ok, Err> {
     type Residual = Err;
 
     #[track_caller]
-    fn fingerprint_with<F, B>(self, fingerprinter: B) -> Result<Ok, Culprit<F>>
+    fn or_ctx<I, C, F>(self, op: F) -> Result<Ok, Culprit<C>>
     where
-        B: FnOnce(Err) -> F,
-        F: Fingerprint,
+        F: FnOnce(Err) -> I,
+        C: Context + From<I>,
     {
         match self {
             Ok(t) => Ok(t),
             Err(e) => {
-                let stack = ContextStack::from_err(&e);
-                let fingerprint = fingerprinter(e);
-                Err(Culprit::new_with_stack(fingerprint, stack))
+                let stack = Trace::from_err(&e);
+                Err(Culprit::new_with_stack(op(e), stack))
             }
         }
     }
 }
 
-impl<Ok, F1: Fingerprint> ResultExt for core::result::Result<Ok, Culprit<F1>> {
+impl<Ok, C1: Context> ResultExt for core::result::Result<Ok, Culprit<C1>> {
     type Ok = Ok;
-    type Residual = F1;
+    type Residual = C1;
 
     #[track_caller]
-    fn fingerprint_with<F2, B>(self, fingerprinter: B) -> Result<Ok, Culprit<F2>>
+    fn or_ctx<I, C2, F>(self, op: F) -> Result<Ok, Culprit<C2>>
     where
-        B: FnOnce(F1) -> F2,
-        F2: Fingerprint,
+        F: FnOnce(C1) -> I,
+        C2: Context + From<I>,
     {
         match self {
             Ok(t) => Ok(t),
             Err(culprit) => {
-                let note = culprit.fingerprint().to_string();
-                Err(culprit.with_fingerprint(fingerprinter).with_note(note))
+                let note = culprit.ctx().to_string();
+                Err(culprit.map_ctx(op).with_note(note))
             }
         }
     }
 
-    fn note_with<F2, N, B>(self, note: N, fingerprinter: B) -> Result<Ok, Culprit<F2>>
+    fn or_culprit<I, C2, N, F>(self, note: N, op: F) -> Result<Ok, Culprit<C2>>
     where
         N: Into<Cow<'static, str>>,
-        B: FnOnce(F1) -> F2,
+        F: FnOnce(C1) -> I,
         Self: Sized,
-        F2: Fingerprint,
+        C2: Context + From<I>,
     {
         match self {
             Ok(t) => Ok(t),
-            Err(culprit) => Err(culprit.with_fingerprint(fingerprinter).with_note(note)),
+            Err(culprit) => Err(culprit.map_ctx(op).with_note(note)),
         }
     }
 
-    fn note<F2, N>(self, note: N) -> Result<Ok, Culprit<F2>>
+    fn or_into_culprit<C2, N>(self, note: N) -> Result<Ok, Culprit<C2>>
     where
         Self: Sized,
-        F2: Fingerprint + From<F1>,
+        C2: Context + From<C1>,
         N: Into<Cow<'static, str>>,
     {
         match self {
             Ok(t) => Ok(t),
-            Err(culprit) => Err(culprit.with_fingerprint(F2::from).with_note(note)),
+            Err(culprit) => Err(culprit.map_ctx(C2::from).with_note(note)),
         }
     }
 }

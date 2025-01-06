@@ -29,50 +29,51 @@ A Rust error crate with the goal of identifying precisely where and in which con
 
 # Getting started
 
-**First**, define some fingerprint types which must implement Debug and Display. A Fingerprint represents the unique error cases that can occur in your app. Fingerprints may wrap fingerprints from other abstraction layers such as modules or crates. Fingerprints should be small and represent a unique "fingerprint" of a given error state.
+**First**, define some context types which must implement Debug and Display. A Context represents the unique error cases that can occur in your app. Context types may wrap context from other abstraction layers such as modules or crates. Context types should be small and represent the most relevant context of a given error state.
 
 ```rust
 #[derive(Debug)]
-enum StorageFingerprint {
+enum StorageCtx {
     Io(std::io::ErrorKind),
     Corrupt,
 }
-impl Display for StorageFingerprint { ... }
+impl Display for StorageCtx { ... }
 
 #[derive(Debug)]
-enum CalcFingerprint {
+enum CalcCtx {
     NotANumber,
-    Storage(StorageFingerprint),
+    Storage(StorageCtx
+  ),
 }
-impl Display for CalcFingerprint { ... }
+impl Display for CalcCtx { ... }
 ```
 
-**Next**, Implement `From` conversions to build `Fingerprints` from `Error`s and other `Fingerprint`s:
+**Next**, Implement `From` conversions to build `Contexts` from `Errors` and other `Contexts`:
 
 ```rust
-impl From<std::io::Error> for StorageFingerprint {
+impl From<std::io::Error> for StorageCtx {
     fn from(e: std::io::Error) -> Self {
-        StorageFingerprint::Io(e.kind())
+        StorageCtx::Io(e.kind())
     }
 }
 
-impl From<StorageFingerprint> for CalcFingerprint {
-    fn from(f: StorageFingerprint) -> Self {
-        CalcFingerprint::Storage(f)
+impl From<StorageCtx> for CalcCtx {
+    fn from(f: StorageCtx) -> Self {
+        CalcCtx::Storage(f)
     }
 }
 ```
 
-**Next**, use `Culprit<Fingerprint>` as the error type in a Result:
+**Next**, use `Culprit<Ctx>` as the error type in a Result:
 
 ```rust
-fn read_file(file: &str) -> Result<String, Culprit<StorageFingerprint>> {
+fn read_file(file: &str) -> Result<String, Culprit<StorageCtx>> {
    Ok(std::fs::read_to_string(file)?)
 }
 
-fn sum_file(file: &str) -> Result<f64, Culprit<CalcFingerprint>> {
-   // calling fingerprint is required when the fingerprint type changes
-   let data = read_file(&req.file).fingerprint()?;
+fn sum_file(file: &str) -> Result<f64, Culprit<CalcCtx>> {
+   // calling `or_ctx` or `or_into_ctx` is required when the result already contains a Culprit but you want to change the context.
+   let data = read_file(&req.file).or_into_ctx()?;
    ...
 }
 ```
@@ -147,16 +148,15 @@ One of Culprit's goals is to make it easier for the developer to map erroneous s
 
 # Outstanding Work
 
-- [ ] prefix result extension fns with `or_` to be more idiomatic
-- [ ] fingerprint builder fns should return `Into<Fingerprint>`
-- [ ] support gradual refinement via making the `Fingerprint` type optional
-- [ ] implement `#[derive(Fingerprint)]`
+- [x] prefix result extension fns with `or_` to be more idiomatic
+- [x] context fns should return `Into<Context>`
+- [ ] implement `#[derive(CulpritContext)]`
   - [ ] provides `Display` attr and impl
-  - [ ] provides `From` impls for deriving Fingerprints from Errors or other Fingerprints. Would be nice to support mapping/extraction.
-  - [ ] provides `Into<Culprit>` impl for raising new errors
-- [ ] rename `Fingerprint` to `Context` (or something similar)
+  - [ ] provides `From` impls for deriving Contexts from Errors or other Contexts. Would be nice to support mapping/extraction.
+  - [ ] provides `Into<Result<T,Culprit>>` impl for raising new errors
+- [x] rename `Fingerprint` to `Context`
 - [ ] add [SpanTrace] support behind a featureflag
-- [ ] add `type Result<T, C> = Result<T, Culprit<C>>`
+- [x] add `type Result<T, C> = Result<T, Culprit<C>>`
 - [ ] `bail!` or similar macro for easy error generation
 - [ ] document all methods and modules
 

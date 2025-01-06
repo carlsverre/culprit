@@ -30,32 +30,30 @@ mod file {
     };
 
     #[derive(Debug)]
-    pub enum Fingerprint {
+    pub enum FileCtx {
         Io(std::io::ErrorKind),
         Corrupt,
     }
 
-    impl Display for Fingerprint {
+    impl Display for FileCtx {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             match self {
-                Fingerprint::Io(kind) => write!(f, "I/O error: {}", kind),
-                Fingerprint::Corrupt => write!(f, "corrupt data"),
+                FileCtx::Io(kind) => write!(f, "I/O error: {}", kind),
+                FileCtx::Corrupt => write!(f, "corrupt data"),
             }
         }
     }
 
-    impl From<std::io::Error> for Fingerprint {
+    impl From<std::io::Error> for FileCtx {
         fn from(err: std::io::Error) -> Self {
-            Fingerprint::Io(err.kind())
+            FileCtx::Io(err.kind())
         }
     }
 
-    pub fn read_file<P: AsRef<Path>>(
-        path: P,
-    ) -> Result<Vec<serde_json::Value>, Culprit<Fingerprint>> {
+    pub fn read_file<P: AsRef<Path>>(path: P) -> Result<Vec<serde_json::Value>, Culprit<FileCtx>> {
         let file = std::fs::File::open(&path)?;
         let reader = std::io::BufReader::new(file);
-        let data = serde_json::from_reader(reader).fingerprint_with(|_| Fingerprint::Corrupt)?;
+        let data = serde_json::from_reader(reader).or_ctx(|_| FileCtx::Corrupt)?;
         Ok(data)
     }
 }
@@ -66,39 +64,39 @@ mod calc {
     use std::path::Path;
 
     #[derive(Debug)]
-    pub enum Fingerprint {
+    pub enum CalcCtx {
         NotANumber,
-        File(file::Fingerprint),
+        File(file::FileCtx),
     }
 
-    impl std::fmt::Display for Fingerprint {
+    impl std::fmt::Display for CalcCtx {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Fingerprint::NotANumber => write!(f, "not a number"),
-                Fingerprint::File(fp) => write!(f, "{}", fp),
+                CalcCtx::NotANumber => write!(f, "not a number"),
+                CalcCtx::File(fp) => write!(f, "{}", fp),
             }
         }
     }
 
-    impl From<file::Fingerprint> for Fingerprint {
-        fn from(fp: file::Fingerprint) -> Self {
-            Fingerprint::File(fp)
+    impl From<file::FileCtx> for CalcCtx {
+        fn from(fp: file::FileCtx) -> Self {
+            CalcCtx::File(fp)
         }
     }
 
-    pub fn sum_file<P: AsRef<Path>>(path: P) -> Result<f64, Culprit<Fingerprint>> {
-        let data = file::read_file(&path).fingerprint()?;
+    pub fn sum_file<P: AsRef<Path>>(path: P) -> Result<f64, Culprit<CalcCtx>> {
+        let data = file::read_file(&path).or_into_ctx()?;
         let mut sum = 0f64;
         for value in data {
             match value {
                 serde_json::Value::Number(n) => {
                     sum += n
                         .as_f64()
-                        .ok_or_else(|| Culprit::new(Fingerprint::NotANumber))?
+                        .ok_or_else(|| Culprit::new(CalcCtx::NotANumber))?
                 }
                 other => {
                     return Err(Culprit::new_with_note(
-                        Fingerprint::NotANumber,
+                        CalcCtx::NotANumber,
                         format!("expected number; got {:?}", other),
                     ))
                 }
@@ -109,31 +107,31 @@ mod calc {
 }
 
 #[derive(Debug)]
-pub enum Fingerprint {
-    Calc(calc::Fingerprint),
+pub enum Ctx {
+    Calc(calc::CalcCtx),
     Usage,
 }
 
-impl std::fmt::Display for Fingerprint {
+impl std::fmt::Display for Ctx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Fingerprint::Calc(fp) => write!(f, "{}", fp),
-            Fingerprint::Usage => write!(f, "usage error; expected one argument"),
+            Ctx::Calc(fp) => write!(f, "{}", fp),
+            Ctx::Usage => write!(f, "usage error; expected one argument"),
         }
     }
 }
 
-impl From<calc::Fingerprint> for Fingerprint {
-    fn from(fp: calc::Fingerprint) -> Self {
-        Fingerprint::Calc(fp)
+impl From<calc::CalcCtx> for Ctx {
+    fn from(fp: calc::CalcCtx) -> Self {
+        Ctx::Calc(fp)
     }
 }
 
-pub fn main() -> Result<(), Culprit<Fingerprint>> {
+pub fn main() -> Result<(), Culprit<Ctx>> {
     let path = std::env::args()
         .nth(1)
-        .ok_or_else(|| Culprit::new(Fingerprint::Usage))?;
-    let sum = calc::sum_file(&path).fingerprint()?;
+        .ok_or_else(|| Culprit::new(Ctx::Usage))?;
+    let sum = calc::sum_file(&path).or_into_ctx()?;
     println!("Sum: {}", sum);
     Ok(())
 }

@@ -6,80 +6,84 @@ use core::{
 };
 
 use crate::{
-    context::{Context, ContextStack},
-    fingerprint::Fingerprint,
+    context::Context,
+    trace::{Trace, TracePoint},
 };
 
-pub struct Culprit<F: Fingerprint> {
-    fingerprint: F,
-    stack: ContextStack,
+pub struct Culprit<C: Context> {
+    ctx: C,
+    stack: Trace,
 }
 
-impl<F: Fingerprint> Culprit<F> {
+impl<C: Context> Culprit<C> {
     #[inline]
     #[track_caller]
-    pub fn new(fingerprint: F) -> Self {
-        let stack = ContextStack::from_ctx(Context::new(fingerprint.to_string()));
-        Self { fingerprint, stack }
+    pub fn new(ctx: impl Into<C>) -> Self {
+        let ctx = ctx.into();
+        let stack = Trace::from_ctx(TracePoint::new(ctx.to_string()));
+        Self { ctx, stack }
     }
 
     #[inline]
     #[track_caller]
-    pub fn new_with_note<N: Into<Cow<'static, str>>>(fingerprint: F, note: N) -> Self {
-        let stack = ContextStack::from_ctx(Context::new(note));
-        Self { fingerprint, stack }
+    pub fn new_with_note<N: Into<Cow<'static, str>>>(ctx: C, note: N) -> Self {
+        let stack = Trace::from_ctx(TracePoint::new(note));
+        Self { ctx, stack }
     }
 
     #[inline]
-    pub fn new_with_stack(fingerprint: F, stack: ContextStack) -> Self {
-        Self { fingerprint, stack }
+    pub fn new_with_stack(ctx: impl Into<C>, stack: Trace) -> Self {
+        Self {
+            ctx: ctx.into(),
+            stack,
+        }
     }
 
     #[inline]
     #[track_caller]
-    pub fn from_err<E: Error + Into<F>>(err: E) -> Self {
-        let stack = ContextStack::from_err(&err);
-        let fingerprint = err.into();
-        Self { fingerprint, stack }
+    pub fn from_err<E: Error + Into<C>>(err: E) -> Self {
+        let stack = Trace::from_err(&err);
+        let ctx = err.into();
+        Self { ctx, stack }
     }
 
     #[inline]
     #[track_caller]
     pub fn with_note<I: Into<Cow<'static, str>>>(mut self, note: I) -> Self {
-        self.stack.push(Context::new(note));
+        self.stack.push(TracePoint::new(note));
         self
     }
 
     #[inline]
     #[track_caller]
-    pub fn with_fingerprint<F2, B>(self, fingerprinter: B) -> Culprit<F2>
+    pub fn map_ctx<I, C2, F>(self, map: F) -> Culprit<C2>
     where
-        F2: Fingerprint,
-        B: FnOnce(F) -> F2,
+        C2: Context + From<I>,
+        F: FnOnce(C) -> I,
     {
         Culprit {
-            fingerprint: fingerprinter(self.fingerprint),
+            ctx: map(self.ctx).into(),
             stack: self.stack,
         }
     }
 
     #[inline]
-    pub fn fingerprint(&self) -> &F {
-        &self.fingerprint
+    pub fn ctx(&self) -> &C {
+        &self.ctx
     }
 
     #[inline]
-    pub fn context(&self) -> &ContextStack {
+    pub fn trace(&self) -> &Trace {
         &self.stack
     }
 
     #[inline]
-    pub fn into_err(self) -> CulpritErr<F> {
+    pub fn into_err(self) -> CulpritErr<C> {
         CulpritErr(self)
     }
 }
 
-impl<E: Error, F: Fingerprint + From<E>> From<E> for Culprit<F> {
+impl<E: Error, C: Context + From<E>> From<E> for Culprit<C> {
     #[inline]
     #[track_caller]
     fn from(source: E) -> Self {
@@ -87,46 +91,46 @@ impl<E: Error, F: Fingerprint + From<E>> From<E> for Culprit<F> {
     }
 }
 
-impl<F: Fingerprint> From<Culprit<F>> for (F, ContextStack) {
+impl<C: Context> From<Culprit<C>> for (C, Trace) {
     #[inline]
-    fn from(culprit: Culprit<F>) -> Self {
-        (culprit.fingerprint, culprit.stack)
+    fn from(culprit: Culprit<C>) -> Self {
+        (culprit.ctx, culprit.stack)
     }
 }
 
-impl<F: Fingerprint> Debug for Culprit<F> {
+impl<C: Context> Debug for Culprit<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:?}\n{}", self.fingerprint, self.stack)?;
+        write!(f, "{:?}\n{}", self.ctx, self.stack)?;
         Ok(())
     }
 }
 
-impl<F: Fingerprint> Display for Culprit<F> {
+impl<C: Context> Display for Culprit<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}\n{}", self.fingerprint, self.stack)?;
+        write!(f, "{}\n{}", self.ctx, self.stack)?;
         Ok(())
     }
 }
 
-pub struct CulpritErr<F: Fingerprint>(Culprit<F>);
+pub struct CulpritErr<C: Context>(Culprit<C>);
 
-impl<F: Fingerprint> CulpritErr<F> {
+impl<C: Context> CulpritErr<C> {
     #[inline]
-    pub fn into_culprit(self) -> Culprit<F> {
+    pub fn into_culprit(self) -> Culprit<C> {
         self.0
     }
 }
 
-impl<F: Fingerprint> Display for CulpritErr<F> {
+impl<C: Context> Display for CulpritErr<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         Display::fmt(&self.0, f)
     }
 }
 
-impl<F: Fingerprint> Debug for CulpritErr<F> {
+impl<C: Context> Debug for CulpritErr<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         Debug::fmt(&self.0, f)
     }
 }
 
-impl<F: Fingerprint> Error for CulpritErr<F> {}
+impl<C: Context> Error for CulpritErr<C> {}

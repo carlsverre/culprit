@@ -12,38 +12,38 @@ impl Display for SimpleError {
 }
 
 #[derive(Debug)]
-enum Fingerprint {
+enum Context {
     A,
 }
 
-impl Display for Fingerprint {
+impl Display for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Fingerprint::A")
+        write!(f, "Context::A")
     }
 }
 
-impl From<SimpleError> for Fingerprint {
+impl From<SimpleError> for Context {
     fn from(_: SimpleError) -> Self {
-        Fingerprint::A
+        Context::A
     }
 }
 
 #[derive(Debug)]
-enum Fingerprint2 {
-    Wrapped(Fingerprint),
+enum Context2 {
+    Wrapped(Context),
 }
 
-impl Display for Fingerprint2 {
+impl Display for Context2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Fingerprint2::Wrapped(x) => write!(f, "Fingerprint2::Wrapped({x})"),
+            Context2::Wrapped(x) => write!(f, "Context2::Wrapped({x})"),
         }
     }
 }
 
-impl From<Fingerprint> for Fingerprint2 {
-    fn from(_: Fingerprint) -> Self {
-        Fingerprint2::Wrapped(Fingerprint::A)
+impl From<Context> for Context2 {
+    fn from(_: Context) -> Self {
+        Context2::Wrapped(Context::A)
     }
 }
 
@@ -51,34 +51,31 @@ fn raise_simple_error() -> Result<(), SimpleError> {
     Err(SimpleError)
 }
 
-fn wrap_in_culprit() -> Result<(), Culprit<Fingerprint>> {
+fn wrap_in_culprit() -> Result<(), Culprit<Context>> {
     raise_simple_error()?;
     Ok(())
 }
 
-fn map_fingerprint() -> Result<(), Culprit<Fingerprint2>> {
-    wrap_in_culprit().fingerprint()?;
+fn map_context() -> Result<(), Culprit<Context2>> {
+    wrap_in_culprit().or_into_ctx()?;
     Ok(())
 }
 
-fn add_note() -> Result<(), Culprit<Fingerprint2>> {
-    map_fingerprint().note("This is a note")?;
+fn add_note() -> Result<(), Culprit<Context2>> {
+    map_context().or_into_culprit("This is a note")?;
     Ok(())
 }
 
-fn map_fingerprint_without_changing() -> Result<(), Culprit<Fingerprint2>> {
-    add_note().fingerprint()?;
+fn map_context_without_changing() -> Result<(), Culprit<Context2>> {
+    add_note().or_into_ctx()?;
     Ok(())
 }
 
 pub fn main() {
-    let culprit = map_fingerprint_without_changing().unwrap_err();
+    let culprit = map_context_without_changing().unwrap_err();
     println!("{:?}", culprit);
 
-    assert!(matches!(
-        culprit.fingerprint(),
-        &Fingerprint2::Wrapped(Fingerprint::A)
-    ));
-    let context = culprit.context();
+    assert!(matches!(culprit.ctx(), &Context2::Wrapped(Context::A)));
+    let context = culprit.trace();
     assert_eq!(context.len(), 4);
 }

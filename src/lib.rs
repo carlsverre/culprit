@@ -5,11 +5,13 @@ extern crate alloc;
 
 mod context;
 mod culprit;
-mod fingerprint;
 mod result;
 mod src_location;
+mod trace;
 
 pub use context::Context;
 pub use culprit::{Culprit, CulpritErr};
-pub use fingerprint::Fingerprint;
 pub use result::ResultExt;
+pub use trace::TracePoint;
+
+pub type Result<T, C> = core::result::Result<T, Culprit<C>>;
