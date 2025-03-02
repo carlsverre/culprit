@@ -1,6 +1,6 @@
 [package]
 name = "culprit"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["Carl Sverre"]
 description = "A Rust error crate with the goal of identifying precisely where and in which context an error occurs."
@@ -10,7 +10,7 @@ keywords = ["error", "error-handling", "result"]
 readme = "README.md"
 
 [dependencies]
-smallvec = { version = "1.13", features = ["union"] }
+smallvec = { version = "1.14", features = ["union"] }
 
 [dev-dependencies]
 serde = "1.0"

@@ -10,6 +10,7 @@ use crate::{
     trace::{Trace, TracePoint},
 };
 
+#[derive(Clone)]
 pub struct Culprit<C: Context> {
     ctx: C,
     stack: Trace,
@@ -18,8 +19,7 @@ pub struct Culprit<C: Context> {
 impl<C: Context> Culprit<C> {
     #[inline]
     #[track_caller]
-    pub fn new(ctx: impl Into<C>) -> Self {
-        let ctx = ctx.into();
+    pub fn new(ctx: C) -> Self {
         let stack = Trace::from_ctx(TracePoint::new(ctx.to_string()));
         Self { ctx, stack }
     }
@@ -134,3 +134,28 @@ impl<C: Context> Debug for CulpritErr<C> {
 }
 
 impl<C: Context> Error for CulpritErr<C> {}
+
+#[cfg(test)]
+mod tests {
+    use core::error::Error;
+    use core::fmt::Display;
+
+    use super::Culprit;
+
+    #[derive(Debug, Clone)]
+    struct Ctx;
+
+    impl Display for Ctx {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Ctx")
+        }
+    }
+
+    impl Error for Ctx {}
+
+    #[test]
+    fn test_clone() {
+        let culprit = Culprit::new(Ctx);
+        let _ = culprit.clone();
+    }
+}

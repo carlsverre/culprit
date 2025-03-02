@@ -7,6 +7,7 @@ use smallvec::SmallVec;
 
 use crate::src_location::SrcLocation;
 
+#[derive(Clone)]
 pub struct TracePoint {
     location: Option<SrcLocation>,
     note: Cow<'static, str>,
@@ -40,7 +41,7 @@ impl Display for TracePoint {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Trace(SmallVec<[TracePoint; 1]>);
 
 impl Trace {
